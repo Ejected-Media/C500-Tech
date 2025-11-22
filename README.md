@@ -705,3 +705,57 @@ Once the deployment pipeline is stable, focus on the feature backbone.
 🛠️ Phase 3: Testing and Iteration
  * Alpha Testing: Deploy a minimal version of the bot to a private Discord server and ensure the core commands (/ask-ai, /new-chat, and /create-quiz) function correctly end-to-end.
 Do you want to start with the app.yaml configuration for your Go Discord bot on App Engine, or jump straight into designing the Firestore index strategy?
+
+___
+
+That's right, the app.yaml file is non-negotiable for an App Engine deployment!
+Since your Go application is a Discord Bot that maintains a persistent WebSocket connection (a background worker) rather than a simple request-response web server, the default Automatic Scaling is NOT suitable. Automatic Scaling will shut down the instance when it's idle, which kills your bot's connection.
+You need to use Manual Scaling to keep a single instance running continuously.
+⚙️ App Engine app.yaml for a Discord Bot
+Here is the recommended configuration using Manual Scaling and the Go 1.21+ runtime. Save this as app.yaml in the root directory of your Go project.
+# app.yaml
+
+# 1. Runtime: Specify the Go version
+runtime: go121
+
+# 2. Instance Class: Choose a stable class
+# B1 is the smallest class that supports Manual and Basic scaling. 
+# It provides a dedicated instance with a minimal resource cost.
+instance_class: B1
+
+# 3. Scaling Type: MANUAL is CRUCIAL for a persistent bot
+# This ensures one instance is always running, maintaining the Discord connection.
+manual_scaling:
+  instances: 1 
+
+# 4. Entrypoint: The command App Engine runs to start your bot
+# This executes your compiled application (assuming you compile to an executable 
+# named 'main' or run it directly with 'go run').
+# Use 'go run main.go' for simplicity in development, but compile to an executable
+# for production performance.
+entrypoint: go run main.go 
+
+# 5. Environment Variables: Securely pass your secrets
+# The secrets are set via the 'gcloud app deploy' command or the Cloud Console, 
+# and your Go code accesses them via os.Getenv().
+env_variables:
+  # Discord Bot Token (needed by the discordgo library)
+  DISCORD_BOT_TOKEN: "YOUR_DISCORD_BOT_TOKEN" 
+  
+  # Gemini API Key (needed by the genai SDK)
+  GEMINI_API_KEY: "YOUR_GEMINI_API_KEY"
+
+# 6. Handler (Required for App Engine Standard, but minimal for a bot)
+# This handles the root URL, although your bot primarily uses websockets.
+handlers:
+- url: /.*
+  script: auto
+
+Key Configuration Notes
+ * manual_scaling: instances: 1: This is the most important setting. It tells App Engine to provision and keep one instance of your bot running 24/7, preventing the bot from being shut down due to inactivity.
+ * instance_class: B1: The B (Basic) instance classes are designed to support manual/basic scaling and background threads (which Discord WebSockets essentially act as). You might need a larger class (like B2) if your bot runs high-CPU tasks (like heavy data processing), but B1 is a great, cost-effective starting point.
+ * Security: While you define the environment variable keys in app.yaml, you must not commit the actual secret values (YOUR_DISCORD_BOT_TOKEN, etc.) to your repository. They will be set securely during the deployment process via the command line or the Google Cloud console.
+With this file in place, your deployment command will be:
+gcloud app deploy
+
+Now that the App Engine configuration is set, would you like to focus on Firestore Indexing next, or start coding the Go service to handle User Context?
