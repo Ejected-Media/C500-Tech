@@ -787,6 +787,8 @@ This collection is queried by both students (to see what's due) and teachers (to
 3. DueTime | Composite |
 2. The Messages Subcollection (Chat History)
 This collection is critical for the /ask-ai command to retrieve conversation history.
+
+
 | Feature / Query Goal | Query Structure (Conceptual) | Fields to Index | Type |
 |---|---|---|---|
 | History Retrieval | Get messages for a given session (ChannelID is the parent doc) AND order them by Timestamp. | 1. Timestamp | Single-Field (but requires a Collection Group index in this context) |
@@ -797,6 +799,8 @@ Since Messages is a subcollection under ChatSessions, you need to configure a Co
 You don't typically create these indexes manually in the Firestore console. Instead, when you run an unindexed query in your Go code for the first time, Firestore will throw an error but provide a specific index URL link in the log message.
 Index Definition File (firestore.indexes.json)
 For large projects, it's best practice to define all required composite indexes in a configuration file and deploy them alongside your application:
+
+```
 // firestore.indexes.json
 
 {
@@ -826,10 +830,122 @@ For large projects, it's best practice to define all required composite indexes 
     }
   ]
 }
-
+```
 Deployment
 Once you have this file, you can deploy the indexes using the gcloud CLI:
 gcloud firestore indexes composite create-from-file firestore.indexes.json
 
 By adding and deploying this file, you ensure your Go queries for fetching student assignments and retrieving chat history will be highly performant from day one.
 Now that indexing is covered, the next logical step is to implement the Go service that retrieves the User Context from Firestore, allowing you to secure your bot and enable role-gating. Shall we write the code for the GetUserContext function?
+
+
+__
+
+That's the most crucial piece of business logic! The User Context function acts as the "bouncer" and the "navigator" for your entire bot, ensuring users have the right permissions and placing their requests within the correct Classroom 500 context (the specific class they are chatting in).
+Let's write the Go function, GetUserContext, that retrieves user role and class mapping from Firestore based on the Discord User and Channel IDs.
+🛠️ Go Service: GetUserContext
+This function will live in your service layer (e.g., services/user_lookup.go) and should be called at the start of every command handler (askAICommand, createQuizCommand, etc.).
+1. Define the Go Struct
+We'll use a simple struct to pass the essential context throughout your application logic:
+
+```
+// services/user_lookup.go
+
+package services
+
+import (
+	"context"
+	"fmt"
+	
+	"cloud.google.com/go/firestore"
+)
+
+// UserContext holds the role and class information for the current Discord user/channel.
+type UserContext struct {
+	Role      string
+	ClassID   string 
+	ClassName string
+	// You might add an internal Firestore user ID if it differs from the Discord ID
+}
+```
+
+2. The GetUserContext Function
+This function takes the Firestore client and the IDs from the Discord interaction to look up the data. We'll implement a fallback if the channel isn't mapped to a specific class.
+// services/user_lookup.go
+
+```
+func GetUserContext(ctx context.Context, client *firestore.Client, discordUserID, channelID string) (*UserContext, error) {
+	// 1. Look up the User's Role (User ID is assumed to be the Firestore Document ID)
+	userDoc, err := client.Collection("Users").Doc(discordUserID).Get(ctx)
+	if err != nil {
+		if status.Code(err) == codes.NotFound {
+			// If the user isn't in Firestore, they can't use the bot.
+			return nil, fmt.Errorf("user not registered in Classroom 500: %s", discordUserID)
+		}
+		return nil, fmt.Errorf("failed to fetch user data: %w", err)
+	}
+
+	// Unmarshal the user data (assuming 'Role' is a string field)
+	role, ok := userDoc.Data()["Role"].(string)
+	if !ok || role == "" {
+		role = "Student" // Default to Student if role is missing/invalid
+	}
+
+	// 2. Look up the Class details using the Discord Channel ID
+	// Assumption: Discord Channel ID is mapped to the Firestore Class Document ID
+	classDoc, err := client.Collection("Classes").Doc(channelID).Get(ctx)
+	if err != nil {
+		if status.Code(err) == codes.NotFound {
+			// Fallback for channels not mapped to a specific class (e.g., a "general" channel)
+			return &UserContext{
+				Role:      role,
+				ClassID:   "", // Indicates no specific class context
+				ClassName: "General",
+			}, nil
+		}
+		return nil, fmt.Errorf("failed to fetch class data: %w", err)
+	}
+
+	// Unmarshal class data
+	className, ok := classDoc.Data()["Name"].(string)
+	if !ok || className == "" {
+		className = "Unknown Class"
+	}
+
+	// 3. Return the complete context
+	return &UserContext{
+		Role:      role,
+		ClassID:   channelID,
+		ClassName: className,
+	}, nil
+}
+```
+
+3. Usage in a Command Handler
+In your command handlers, you now have a clean way to perform role-gating:
+// Example usage in the newChatCommand handler
+
+func createQuizCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+    ctx := context.Background()
+    
+    // Get the user's context
+    userContext, err := services.GetUserContext(ctx, firestoreClient, i.Member.User.ID, i.ChannelID)
+    
+    if err != nil {
+        // Handle user not found or database errors
+        s.InteractionResponseEdit(i.Interaction, discordgo.WebhookEdit{Content: discordgo.String("Error: You must be a registered user to use this bot.")})
+        return
+    }
+
+    // Role Gating: Only allow Teachers to create quizzes
+    if userContext.Role != "Teacher" {
+        s.InteractionResponseEdit(i.Interaction, discordgo.WebhookEdit{Content: discordgo.String("Permission Denied: Only teachers can create quizzes.")})
+        return
+    }
+
+    // Now proceed with the Quiz generation logic, using userContext.ClassID and userContext.ClassName
+    // ...
+}
+
+This structure is highly scalable. You can now use the userContext to determine not just permissions, but also which Assignment collection to write to, which Lesson material to pull for /study-help, and more.
+The core infrastructure is now defined: App Engine config, Firestore indexes, and User context logic. The next logical step is to implement a specific, high-value feature like the /create-quiz command that uses all these components together. Shall we focus on implementing that feature next?
