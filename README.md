@@ -147,3 +147,97 @@ For a chatbot to be useful, it needs memory.
  * Discord/Firestore Glue: You'll need to map a Discord Channel ID or User ID to a unique chat session identifier. You can store the mapping and the conversation state itself in a Firestore collection (ChatSessions) to persist history across bot restarts, which is crucial for App Engine's scaling nature.
 The GitHub repository MiguelMachado-dev/disc-go-bot provides a working example of a GoLang Discord bot that integrates the Gemini API using slash commands like /ask-ai.
 
+___
+
+That's a great request! The GitHub repository, MiguelMachado-dev/disc-go-bot, uses Discord's modern Slash Commands (/ask-ai) to trigger the interaction, which is the recommended approach.
+Here are the key code snippets demonstrating how the bot integrates Discord slash command handling with the Gemini API call in Go.
+🛠️ Go Code Examples
+1. Discord Slash Command Interaction Handler
+This function is the entry point for all slash commands. It checks the command name and dispatches the call to the appropriate handler (e.g., askAICommand for the /ask-ai command).
+// In main.go or a similar file
+
+// Map of command names to their handler functions
+var commandHandlers = map[string]func(s *discordgo.Session, i *discordgo.InteractionCreate){
+    "ask-ai":      askAICommand,
+    "set-gemini-key": setGeminiKeyCommand, // Example of another command
+    // ... other commands
+}
+
+// Handler registered to the Discord session to listen for interaction events
+func interactionHandler(s *discordgo.Session, i *discordgo.InteractionCreate) {
+    // Only process Application Commands (i.e., Slash Commands)
+    if i.Type != discordgo.InteractionApplicationCommand {
+        return
+    }
+
+    data := i.ApplicationCommandData()
+
+    // Dispatch the interaction based on the command name
+    if handler, ok := commandHandlers[data.Name]; ok {
+        // Run the handler in a Goroutine to ensure the Discord gateway isn't blocked
+        go handler(s, i) 
+    }
+}
+
+Note: The actual registration of the slash commands (/ask-ai, etc.) happens during the bot's startup using functions like s.ApplicationCommandBulkOverwrite.
+2. The /ask-ai Command Handler
+This function is called by the interaction handler above. It retrieves the user's prompt from the command options and calls a service function to get the Gemini response.
+// In a dedicated commands/ai.go file
+
+func askAICommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+    // Acknowledge the interaction immediately to prevent timeout errors
+    s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+        Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
+        Data: &discordgo.InteractionResponseData{
+            Content: "Thinking...", // Bot sends "Thinking..." placeholder
+        },
+    })
+
+    // 1. Extract the user's prompt from the slash command option
+    options := i.ApplicationCommandData().Options
+    prompt := ""
+    if len(options) > 0 && options[0].Name == "prompt" {
+        prompt = options[0].StringValue()
+    }
+    
+    // 2. Call the Gemini service function (which handles the API request)
+    geminiResponse, err := getGeminiResponse(prompt, i.Member.User.ID) // Pass UserID for key/history lookup
+
+    // 3. Edit the original placeholder message with the final response
+    editInteractionResponse(s, i.Interaction, geminiResponse, err) 
+}
+
+3. The Gemini API Call (Service Layer)
+This is the core logic that connects to the Gemini SDK.
+// In a dedicated services/gemini.go file (simplified)
+
+func getGeminiResponse(prompt, userID string) (string, error) {
+    ctx := context.Background()
+    // 1. Initialize the client (assuming API key is loaded from a secure source)
+    client, err := genai.NewClient(ctx)
+    if err != nil {
+        return "Error initializing AI client.", err
+    }
+    defer client.Close()
+
+    // 2. Prepare the request (using the model best suited for chat, e.g., gemini-2.5-flash)
+    resp, err := client.Models().GenerateContent(
+        ctx,
+        "gemini-2.5-flash",
+        genai.Text(prompt),
+    )
+    if err != nil {
+        return fmt.Sprintf("Error generating content: %v", err), err
+    }
+
+    // 3. Extract and return the text
+    if len(resp.Candidates) > 0 && len(resp.Candidates[0].Content.Parts) > 0 {
+        return resp.Candidates[0].Content.Parts[0].Text, nil
+    }
+
+    return "Sorry, I couldn't generate a response.", nil
+}
+
+This structure is robust: the Discord handler is fast, and the slow operation (API call) is abstracted away in a service layer, allowing you to easily manage features like history or integration with Firestore for key management.
+If you'd like, we can brainstorm the specific structure for storing and retrieving the chat history using Firestore for multi-turn conversations.
+You can learn more about setting up your Go project and managing dependencies in this video: [Discord Bot Development in Golang - Getting Started with DiscordGo].
