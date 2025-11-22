@@ -65,4 +65,46 @@ func sendDiscordNotification(app MentorApplication) {
     http.Post(webhookURL, "application/json", bytes.NewBuffer(jsonBody))
 }
 
+func handleSubmit(w http.ResponseWriter, r *http.Request) {
+    if r.Method != http.MethodPost {
+        http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+        return
+    }
+
+    ctx := context.Background()
+
+    // 1. Construct the Application Object
+    app := MentorApplication{
+        DiscordID:   r.FormValue("discord_id"),
+        DiscordName: r.FormValue("discord_name"),
+        TwitchURL:   r.FormValue("twitch_url"),
+        Philosophy:  r.FormValue("philosophy"),
+        WorkLink:    r.FormValue("work_link_1"),
+        Status:      "pending",
+        SubmittedAt: time.Now(),
+    }
+
+    // 2. Save to Firestore
+    // We use .Add() to let Firestore generate a unique ID
+    _, _, err := fsClient.Collection("mentors").Add(ctx, app)
+    if err != nil {
+        log.Printf("Failed to save application: %v", err)
+        http.Error(w, "Database Error", http.StatusInternalServerError)
+        return
+    }
+
+    // 3. Ping Discord (Fire and Forget)
+    go sendDiscordNotification(app)
+
+    // 4. Show Success Page
+    w.Write([]byte(`
+        <html>
+        <body style="background:#2c2f33; color:white; text-align:center; padding-top:50px; font-family:sans-serif;">
+            <h1>Application Received! 🚀</h1>
+            <p>Thanks, ` + app.DiscordName + `. We have pinged the admins.</p>
+            <p>You can close this window.</p>
+        </body>
+        </html>
+    `))
+}
 
