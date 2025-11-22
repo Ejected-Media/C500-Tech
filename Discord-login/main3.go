@@ -21,4 +21,23 @@ import (
 var fsClient *firestore.Client
 
 
+func initFirestore() {
+    ctx := context.Background()
+    conf := &firebase.Config{ProjectID: "YOUR_PROJECT_ID"} // e.g. c500-tech
+
+    // Note: On App Engine, you don't need option.WithCredentialsFile
+    // For local dev, point to your serviceAccountKey.json
+    opt := option.WithCredentialsFile("serviceAccountKey.json")
+    
+    app, err := firebase.NewApp(ctx, conf, opt)
+    if err != nil {
+        log.Fatalf("error initializing app: %v", err)
+    }
+
+    client, err := app.Firestore(ctx)
+    if err != nil {
+        log.Fatalf("error getting firestore client: %v", err)
+    }
+    fsClient = client
+}
 
