@@ -1,0 +1,7 @@
+runtime: go122
+env_variables:
+  DISCORD_CLIENT_ID: "your_id"
+  DISCORD_CLIENT_SECRET: "your_secret"
+  DISCORD_WEBHOOK_URL: "your_webhook"
+  GOOGLE_CLOUD_PROJECT: "c500-tech"
+  
