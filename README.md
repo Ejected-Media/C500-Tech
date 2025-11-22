@@ -763,3 +763,73 @@ With this file in place, your deployment command will be:
 gcloud app deploy
 
 Now that the App Engine configuration is set, would you like to focus on Firestore Indexing next, or start coding the Go service to handle User Context?
+
+
+__
+
+That's a very practical choice. Focusing on Firestore Indexing early ensures your complex queries for features like /create-quiz (Teacher features) and /check-due-dates (Student features) will remain fast and cost-efficient, preventing performance bottlenecks as your user base grows.
+In Firestore, an index is required for any query that involves a compound query (using more than one where() clause) or a query that combines a where() clause with an orderBy() clause on different fields.
+Here are the most important indexes you will likely need for the Classroom 500 data model:
+💾 Essential Firestore Indexes for Classroom 500
+We'll focus on the Assignments and Messages collections, as these are the most likely to require combined queries.
+1. The Assignments Collection
+This collection is queried by both students (to see what's due) and teachers (to check grades).
+
+
+| Feature / Query Goal | Query Structure (Conceptual) | Fields to Index | Type |
+|---|---|---|---|
+| Student To-Do List | Get assignments for a ClassID AND order by DueTime. | 1. ClassID
+2. DueTime | Composite |
+| Submission Check | Get a student's submission by StudentID AND AssignmentID. | 1. StudentID
+2. AssignmentID | Composite |
+| Teacher Overview | Get all assignments for a class (filtered by ClassID) that have been submitted (filtered by IsSubmitted) and order by DueTime. | 1. ClassID
+2. IsSubmitted
+3. DueTime | Composite |
+2. The Messages Subcollection (Chat History)
+This collection is critical for the /ask-ai command to retrieve conversation history.
+| Feature / Query Goal | Query Structure (Conceptual) | Fields to Index | Type |
+|---|---|---|---|
+| History Retrieval | Get messages for a given session (ChannelID is the parent doc) AND order them by Timestamp. | 1. Timestamp | Single-Field (but requires a Collection Group index in this context) |
+
+
+Since Messages is a subcollection under ChatSessions, you need to configure a Collection Group Index for the Timestamp field. This index allows you to query all Messages subcollections simultaneously.
+🛠️ How to Define and Create Indexes
+You don't typically create these indexes manually in the Firestore console. Instead, when you run an unindexed query in your Go code for the first time, Firestore will throw an error but provide a specific index URL link in the log message.
+Index Definition File (firestore.indexes.json)
+For large projects, it's best practice to define all required composite indexes in a configuration file and deploy them alongside your application:
+// firestore.indexes.json
+
+{
+  "indexes": [
+    // 1. Student To-Do List Index (Assignments Collection)
+    {
+      "collectionGroup": "Assignments",
+      "fields": [
+        {"fieldPath": "ClassID", "order": "ASCENDING"},
+        {"fieldPath": "DueTime", "order": "ASCENDING"}
+      ]
+    },
+    // 2. Submission Check Index (Assignments Collection)
+    {
+      "collectionGroup": "Assignments",
+      "fields": [
+        {"fieldPath": "StudentID", "order": "ASCENDING"},
+        {"fieldPath": "AssignmentID", "order": "ASCENDING"}
+      ]
+    },
+    // 3. Chat History Timestamp Index (Messages Subcollection)
+    {
+      "collectionGroup": "Messages",
+      "fields": [
+        {"fieldPath": "Timestamp", "order": "ASCENDING"}
+      ]
+    }
+  ]
+}
+
+Deployment
+Once you have this file, you can deploy the indexes using the gcloud CLI:
+gcloud firestore indexes composite create-from-file firestore.indexes.json
+
+By adding and deploying this file, you ensure your Go queries for fetching student assignments and retrieving chat history will be highly performant from day one.
+Now that indexing is covered, the next logical step is to implement the Go service that retrieves the User Context from Firestore, allowing you to secure your bot and enable role-gating. Shall we write the code for the GetUserContext function?
