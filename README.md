@@ -20,6 +20,8 @@ To keep your application clean, maintainable, and testable in Go, I recommend ad
  * repository/ or store/: Contains the Firestore-specific logic. This layer abstracts away the database operations (getting a client, querying, saving documents). This makes your business logic cleaner and less dependent on the Firestore SDK directly.
 Firestore Data Modeling 📝
 Firestore's document-based nature is perfect for the nested, hierarchical data found in classroom scenarios.
+
+
 | Collection | Document Contents (Go Struct) | Primary Query Focus |
 |---|---|---|
 | Users | ID, Email, Role (Student/Teacher/Admin), Profile (Map) | Getting user profile for login/dashboard. |
@@ -27,6 +29,8 @@ Firestore's document-based nature is perfect for the nested, hierarchical data f
 | Lessons | ID, ClassID, Title, ContentURL, OrderIndex | Listing lessons for a specific class (by ClassID). |
 | Assignments | ID, LessonID, ClassID, DueTime, MaxScore | Listing assignments for a lesson/class. |
 | Submissions | ID, AssignmentID, StudentID, SubmissionData (Map), Score | Querying a student's submission for an assignment. |
+
+
 💡 Feature Brainstorm for Classroom 500
 Leveraging Go's speed for serving API calls and Firestore's real-time capabilities for updates could enable these rich features:
 1. Core Learning & Assessment Features
