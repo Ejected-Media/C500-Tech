@@ -1,0 +1,38 @@
+# app.yaml
+
+# 1. Runtime: Specify the Go version
+runtime: go121
+
+# 2. Instance Class: Choose a stable class
+# B1 is the smallest class that supports Manual and Basic scaling. 
+# It provides a dedicated instance with a minimal resource cost.
+instance_class: B1
+
+# 3. Scaling Type: MANUAL is CRUCIAL for a persistent bot
+# This ensures one instance is always running, maintaining the Discord connection.
+manual_scaling:
+  instances: 1 
+
+# 4. Entrypoint: The command App Engine runs to start your bot
+# This executes your compiled application (assuming you compile to an executable 
+# named 'main' or run it directly with 'go run').
+# Use 'go run main.go' for simplicity in development, but compile to an executable
+# for production performance.
+entrypoint: go run main.go 
+
+# 5. Environment Variables: Securely pass your secrets
+# The secrets are set via the 'gcloud app deploy' command or the Cloud Console, 
+# and your Go code accesses them via os.Getenv().
+env_variables:
+  # Discord Bot Token (needed by the discordgo library)
+  DISCORD_BOT_TOKEN: "YOUR_DISCORD_BOT_TOKEN" 
+  
+  # Gemini API Key (needed by the genai SDK)
+  GEMINI_API_KEY: "YOUR_GEMINI_API_KEY"
+
+# 6. Handler (Required for App Engine Standard, but minimal for a bot)
+# This handles the root URL, although your bot primarily uses websockets.
+handlers:
+- url: /.*
+  script: auto
+  
