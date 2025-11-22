@@ -549,4 +549,123 @@ Scenario: A student asks a question related to their current class material.
 This integration turns your Discord bot from a simple Q&A tool into a deeply integrated, secure, and context-aware educational assistant.
 Would you like to explore the specifics of using structured JSON output from Gemini in Go, which is ideal for commands like /create-quiz?
 
+___
 
+That's an excellent direction. Using Structured JSON Output from the Gemini API is the most reliable way to create application-ready data like quizzes or graded feedback, as it eliminates the need for brittle, text-based parsing.
+The Gemini API, especially models like gemini-2.5-flash, fully supports defining a Response Schema (using the OpenAPI/JSON Schema specification) to guarantee the output is valid JSON and adheres to a predictable structure.
+📐 1. Define the Go Struct Schema
+First, define the Go structs that represent the data you want to receive from the model. For a quiz, you need questions, multiple-choice options, and the correct answer.
+// quiz.go
+
+// Quiz represents the top-level JSON structure for the quiz assignment.
+type Quiz struct {
+	Title    string     `json:"title"`
+	Topic    string     `json:"topic"`
+	Questions []Question `json:"questions"`
+}
+
+// Question is an element of the quiz.
+type Question struct {
+	ID        int      `json:"id"`
+	Text      string   `json:"question_text"`
+	Options   []string `json:"options"` // e.g., ["A", "B", "C", "D"]
+	AnswerKey string   `json:"answer_key"` // The correct option, e.g., "B"
+}
+
+⚙️ 2. Convert Go Struct to JSON Schema
+You need to convert your Go structs into a JSON Schema object that the Gemini API can read. The official Google GenAI SDK for Go handles this by letting you define the schema using the genai.Schema package or by manually defining the structure.
+For complex objects like the Quiz struct, you'll generally define the schema in a dedicated function:
+// quiz.go
+
+import (
+	"google.golang.org/genai"
+	"google.golang.org/protobuf/types/known/structpb"
+)
+
+func getQuizResponseSchema() *genai.Schema {
+    // This is a simplified example of defining the structure
+    return &genai.Schema{
+        Type: genai.TypeObject,
+        Properties: map[string]*genai.Schema{
+            "title": {
+                Type:        genai.TypeString,
+                Description: "A concise title for the quiz.",
+            },
+            "questions": {
+                Type: genai.TypeArray,
+                Items: &genai.Schema{
+                    Type: genai.TypeObject,
+                    Properties: map[string]*genai.Schema{
+                        "question_text": {Type: genai.TypeString},
+                        "options": {
+                            Type: genai.TypeArray,
+                            Items: &genai.Schema{Type: genai.TypeString},
+                        },
+                        "answer_key": {Type: genai.TypeString},
+                    },
+                    Required: []string{"question_text", "options", "answer_key"},
+                },
+            },
+        },
+        Required: []string{"title", "questions"},
+    }
+}
+
+🚀 3. Call Gemini with Structured Output Config
+When calling the GenerateContent method, you pass the schema in the GenerationConfig. You must also set the ResponseMIMEType to "application/json".
+// services/gemini.go
+
+func GenerateQuiz(ctx context.Context, client *genai.Client, topic, className string) (*Quiz, error) {
+    prompt := fmt.Sprintf(
+        "Generate a 5-question multiple-choice quiz on the topic of '%s', suitable for a %s level class. Ensure the output strictly follows the provided JSON schema.", 
+        topic, 
+        className,
+    )
+    
+    // 1. Configure the request for JSON output
+    config := genai.GenerationConfig{
+        ResponseMIMEType: "application/json",
+        ResponseSchema:   getQuizResponseSchema(), // Your defined schema
+    }
+
+    // 2. Call the Gemini API
+    resp, err := client.Models().GenerateContent(
+        ctx,
+        "gemini-2.5-flash",
+        genai.Text(prompt),
+        genai.WithGenerativeContentConfig(config),
+    )
+    if err != nil {
+        return nil, err
+    }
+    
+    // 3. Extract and Unmarshal the JSON response
+    // The response text will be a guaranteed valid JSON string
+    jsonStr := resp.Candidates[0].Content.Parts[0].Text
+    
+    var quiz Quiz
+    if err := json.Unmarshal([]byte(jsonStr), &quiz); err != nil {
+        return nil, fmt.Errorf("failed to unmarshal JSON from Gemini: %w", err)
+    }
+
+    return &quiz, nil
+}
+
+Note: You'd need to import the standard Go encoding/json package for the final json.Unmarshal step.
+💾 4. Save to Firestore
+Once you receive the parsed *Quiz struct, you can easily save it to the Assignments collection in Firestore, ready for your students to access.
+// In your askAICommand handler after successfully calling GenerateQuiz...
+
+quizData, err := GenerateQuiz(ctx, aiClient, topic, userContext.ClassName)
+// ... error handling ...
+
+// Save the resulting Go struct directly to Firestore
+_, _, err = firestoreClient.Collection("Assignments").Add(ctx, quizData)
+// ... error handling and Discord confirmation message ...
+
+This entire flow is secure and robust, providing data integrity from the AI generation through to the database save.
+This video provides an overview of how to get structured output from the Gemini API. How to Get Structured Output from Gemini API because it directly covers the process of defining a schema to receive predictable, structured JSON, which is essential for creating your quizzes.
+
+YouTube video views will be stored in your YouTube History, and your data will be stored and used by YouTube according to its Terms of Service
+
+___
