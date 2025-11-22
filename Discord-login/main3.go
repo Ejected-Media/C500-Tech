@@ -41,3 +41,28 @@ func initFirestore() {
     fsClient = client
 }
 
+
+import "bytes"
+
+func sendDiscordNotification(app MentorApplication) {
+    webhookURL := "YOUR_WEBHOOK_URL_HERE"
+
+    // Format the message using Discord's JSON structure
+    // We can mention roles using <@&ROLE_ID> if you want to ping Admins
+    jsonBody := []byte(fmt.Sprintf(`{
+        "content": "🚨 **New Mentor Application!**",
+        "embeds": [{
+            "title": "%s applied to be a mentor",
+            "color": 5763719,
+            "fields": [
+                {"name": "Philosophy", "value": "%s"},
+                {"name": "Twitch", "value": "%s"},
+                {"name": "Link", "value": "%s"}
+            ]
+        }]
+    }`, app.DiscordName, app.Philosophy, app.TwitchURL, app.WorkLink))
+
+    http.Post(webhookURL, "application/json", bytes.NewBuffer(jsonBody))
+}
+
+
