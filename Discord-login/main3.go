@@ -17,3 +17,8 @@ import (
     "google.golang.org/api/option"
 )
 
+
+var fsClient *firestore.Client
+
+
+
