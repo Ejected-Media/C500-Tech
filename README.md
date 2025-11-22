@@ -362,3 +362,115 @@ func saveMessages(ctx context.Context, client *firestore.Client, channelID strin
 This sequence ensures that every /ask-ai interaction is contextual, and the entire conversation is preserved and managed efficiently in Firestore.
 
 Would you like to explore how to implement a /new-chat command that resets the history by simply deleting the ChatSession document?
+
+
+___
+
+
+That's a smart addition! A /new-chat command provides the user with control over the conversation's context, preventing the AI from getting confused by outdated topics and managing your Firestore costs by letting you prune old data.
+Implementing this involves two main steps: defining the Discord slash command and writing the Go function to delete the relevant documents from Firestore.
+🗑️ 1. Defining the /new-chat Command
+First, you'll need to register the /new-chat command with Discord (similar to how /ask-ai was registered) and update your command handler map.
+Go Command Definition
+// In a command registration function (e.g., in main.go)
+
+var commands = []*discordgo.ApplicationCommand{
+    {
+        Name:        "ask-ai",
+        Description: "Ask the Classroom 500 AI a question.",
+        // ... options for prompt
+    },
+    {
+        Name:        "new-chat",
+        Description: "Start a new conversation, wiping the AI's memory in this channel.",
+    },
+}
+
+// Update the map to include the new handler
+var commandHandlers = map[string]func(s *discordgo.Session, i *discordgo.InteractionCreate){
+    "ask-ai":   askAICommand,
+    "new-chat": newChatCommand, // <-- New handler
+}
+
+🧹 2. The newChatCommand Handler
+This function handles the Discord interaction and calls the Firestore service function to perform the deletion.
+// In a dedicated commands/chat.go file or similar
+
+func newChatCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+    // Acknowledge the interaction immediately
+    s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+        Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
+    })
+
+    channelID := i.ChannelID
+
+    // Call the service function to delete history
+    err := deleteChatHistory(context.Background(), firestoreClient, channelID) 
+
+    var responseContent string
+    if err != nil {
+        log.Printf("Error deleting chat history for channel %s: %v", channelID, err)
+        responseContent = "❌ Failed to clear history! Please try again."
+    } else {
+        responseContent = "✅ **New chat started!** I've cleared the previous conversation history for this channel. Ask me anything new!"
+    }
+
+    // Edit the original placeholder message with the final result
+    s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+        Content: &responseContent,
+    })
+}
+
+🗑️ 3. The Firestore Deletion Logic
+This is the most complex part, as you must delete the messages in the subcollection before deleting the parent session document. Firestore does not automatically delete subcollections when you delete the parent document.
+Go Firestore Service Function
+// In a dedicated services/firestore.go or similar
+
+// Assuming firestoreClient is initialized globally or passed in
+var firestoreClient *firestore.Client 
+
+// deleteChatHistory deletes all documents in the 'Messages' subcollection
+// and then deletes the parent 'ChatSessions' document.
+func deleteChatHistory(ctx context.Context, client *firestore.Client, channelID string) error {
+    sessionRef := client.Collection("ChatSessions").Doc(channelID)
+    
+    // --- Step A: Delete all messages in the subcollection ---
+    messagesRef := sessionRef.Collection("Messages")
+    
+    // Get all documents in the subcollection (using a query iterator)
+    bulkWriter := client.BulkWriter(ctx) // Use a BulkWriter for efficiency
+    
+    messagesIter := messagesRef.Documents(ctx)
+    defer messagesIter.Stop()
+    
+    // Schedule all documents for deletion
+    for {
+        doc, err := messagesIter.Next()
+        if err == iterator.Done {
+            break
+        }
+        if err != nil {
+            return fmt.Errorf("error reading messages for deletion: %w", err)
+        }
+        bulkWriter.Delete(doc.Ref)
+    }
+
+    // Commit the deletion of all messages
+    bulkWriter.End() // Important: ensures all writes are committed.
+
+    // --- Step B: Delete the parent ChatSession document ---
+    _, err := sessionRef.Delete(ctx)
+    if err != nil {
+        // Log this error, but the history is already gone, so it might be recoverable
+        return fmt.Errorf("error deleting session document: %w", err)
+    }
+
+    return nil
+}
+
+Key Considerations
+ * BulkWriter: Using client.BulkWriter() is highly recommended for deleting multiple documents. It batches the operations, making the process much faster and more efficient than deleting documents one by one.
+ * Iterator: You must iterate through the subcollection documents to get their references for deletion, as there's no single command to delete an entire subcollection.
+ * Concurrency: Ensure your firestoreClient is initialized correctly and safely managed for use across concurrent requests (which App Engine and Discord Goroutines will generate).
+This implementation provides a clear, controlled way for users to reset the AI's memory for their current channel.
+Would you like to move on to brainstorming other features, such as integrating the system with your Firestore User/Class models we discussed earlier?
