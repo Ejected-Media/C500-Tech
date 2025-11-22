@@ -9,3 +9,11 @@ type MentorApplication struct {
     Status       string    `firestore:"status"` // e.g., "pending", "approved"
     SubmittedAt  time.Time `firestore:"submitted_at"`
 }
+
+
+import (
+    "cloud.google.com/go/firestore"
+    firebase "firebase.google.com/go/v4"
+    "google.golang.org/api/option"
+)
+
