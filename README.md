@@ -713,6 +713,8 @@ Since your Go application is a Discord Bot that maintains a persistent WebSocket
 You need to use Manual Scaling to keep a single instance running continuously.
 ⚙️ App Engine app.yaml for a Discord Bot
 Here is the recommended configuration using Manual Scaling and the Go 1.21+ runtime. Save this as app.yaml in the root directory of your Go project.
+
+```
 # app.yaml
 
 # 1. Runtime: Specify the Go version
@@ -750,6 +752,8 @@ env_variables:
 handlers:
 - url: /.*
   script: auto
+```
+
 
 Key Configuration Notes
  * manual_scaling: instances: 1: This is the most important setting. It tells App Engine to provision and keep one instance of your bot running 24/7, preventing the bot from being shut down due to inactivity.
