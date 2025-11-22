@@ -272,10 +272,14 @@ type Message struct {
 }
 
 2. Collection Structure
+
+   
 | Collection Name | Document ID | Purpose |
 |---|---|---|
 | ChatSessions | [Discord Channel ID] (or User ID) | Contains metadata for the conversation session. |
 | Messages (Subcollection) | Auto-ID | Stores the individual messages belonging to the parent session. |
+
+
 When a user runs the /ask-ai command in a Discord channel:
  * Use the Channel ID as the document ID in the ChatSessions collection.
  * All prompts and responses in that channel go into the Messages subcollection of that session document.
@@ -356,4 +360,5 @@ func saveMessages(ctx context.Context, client *firestore.Client, channelID strin
 }
 
 This sequence ensures that every /ask-ai interaction is contextual, and the entire conversation is preserved and managed efficiently in Firestore.
+
 Would you like to explore how to implement a /new-chat command that resets the history by simply deleting the ChatSession document?
