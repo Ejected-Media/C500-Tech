@@ -1,6 +1,9 @@
 # C500-Tech
 ~
 
+
+![°](https://github.com/Ejected-Media/C500-Discord-Bot/blob/main/1763765281174.jpg "$")
+
 ___
 
 
